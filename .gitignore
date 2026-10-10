@@ -1,0 +1,159 @@
+const studentForm = document.getElementById('studentForm');
+const attendanceForm = document.getElementById('attendanceForm');
+const studentSelect = document.getElementById('studentSelect');
+const classSelect = document.getElementById('classSelect');
+const studentsTableBody = document.getElementById('studentsTableBody');
+const attendanceTableBody = document.getElementById('attendanceTableBody');
+const attendanceDate = document.getElementById('attendanceDate');
+
+const today = new Date().toISOString().slice(0, 10);
+attendanceDate.value = today;
+
+function formatCurrency(value) {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value || 0));
+}
+
+function renderStatus(status) {
+  const normalized = (status || '').toLowerCase();
+  const label = {
+    presente: 'Presente',
+    faltou: 'Faltou',
+    atrasado: 'Atrasado',
+    ativo: 'Ativo',
+    inativo: 'Inativo'
+  }[normalized] || status;
+
+  const className = `status-${normalized || 'ativo'}`;
+  return `<span class="status-pill ${className}">${label}</span>`;
+}
+
+async function loadDashboard() {
+  const response = await fetch('/api/dashboard');
+  const data = await response.json();
+
+  document.getElementById('totalStudents').textContent = data.total_students ?? 0;
+  document.getElementById('presenceToday').textContent = data.total_present ?? 0;
+  document.getElementById('revenueValue').textContent = formatCurrency(data.total_revenue ?? 0);
+  document.getElementById('classCount').textContent = (data.classes || []).length;
+
+  renderAttendanceTable(data.attendanceToday || []);
+}
+
+async function loadStudents() {
+  const response = await fetch('/api/students');
+  const students = await response.json();
+
+  studentsTableBody.innerHTML = students
+    .map(
+      (student) => `
+        <tr>
+          <td>${student.name}</td>
+          <td>${student.belt}</td>
+          <td>${student.turma}</td>
+          <td>${student.phone}</td>
+          <td>${renderStatus(student.status)}</td>
+        </tr>
+      `
+    )
+    .join('');
+
+  studentSelect.innerHTML = students
+    .map((student) => `<option value="${student.id}">${student.name}</option>`)
+    .join('');
+}
+
+async function loadClasses() {
+  const response = await fetch('/api/classes');
+  const classes = await response.json();
+
+  classSelect.innerHTML = classes
+    .map((item) => `<option value="${item.id}">${item.name} - ${item.schedule}</option>`)
+    .join('');
+}
+
+async function loadAttendanceByDate() {
+  const date = attendanceDate.value || today;
+  const response = await fetch(`/api/attendance?date=${date}`);
+  const rows = await response.json();
+  renderAttendanceTable(rows);
+}
+
+function renderAttendanceTable(rows) {
+  attendanceTableBody.innerHTML = rows.length
+    ? rows
+        .map(
+          (row) => `
+            <tr>
+              <td>${row.student_name}</td>
+              <td>${row.class_name}</td>
+              <td>${renderStatus(row.status)}</td>
+              <td>${row.date}</td>
+            </tr>
+          `
+        )
+        .join('')
+    : `
+      <tr>
+        <td colspan="4">Nenhuma presença registrada para esta data.</td>
+      </tr>
+    `;
+}
+
+studentForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const formData = new FormData(studentForm);
+  const payload = Object.fromEntries(formData.entries());
+
+  const response = await fetch('/api/students', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  const result = await response.json();
+  if (!response.ok) {
+    alert(result.error || 'Erro ao cadastrar aluno');
+    return;
+  }
+
+  studentForm.reset();
+  await loadStudents();
+  await loadDashboard();
+  alert('Aluno cadastrado com sucesso!');
+});
+
+attendanceForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const formData = new FormData(attendanceForm);
+  const payload = Object.fromEntries(formData.entries());
+
+  payload.studentId = Number(payload.studentId);
+  payload.classId = Number(payload.classId);
+
+  const response = await fetch('/api/attendance', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  const result = await response.json();
+  if (!response.ok) {
+    alert(result.error || 'Erro ao registrar presença');
+    return;
+  }
+
+  attendanceForm.reset();
+  attendanceDate.value = today;
+  await loadDashboard();
+  await loadAttendanceByDate();
+  alert('Presença registrada com sucesso!');
+});
+
+attendanceDate.addEventListener('change', loadAttendanceByDate);
+
+(async function init() {
+  await loadClasses();
+  await loadStudents();
+  await loadDashboard();
+  await loadAttendanceByDate();
+})();

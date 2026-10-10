@@ -1,2 +1,4 @@
-# capoeira-attendance-app
-App para gerenciar lista de presença e alunos em academia de capoeira
+node_modules/
+*.log
+database/*.db
+.DS_Store
